@@ -47,7 +47,8 @@ var PROTECTED_PATTERNS = [
   { pattern: /^\.env($|\.(?!example$).+)/, name: ".env files" },
   { pattern: /^\.git(\/|$)/, name: ".git directory" }
 ];
-var DANGEROUS_GIT_PATTERNS = [
+var ALWAYS_BLOCKED_PATTERNS = [
+  // Git — can destroy uncommitted work or remote history
   { pattern: /\bgit\s+checkout\b.*\s--\s/, name: "git checkout --" },
   { pattern: /\bgit\s+restore\s+(?!--staged)/, name: "git restore" },
   { pattern: /\bgit\s+reset\s+.*--hard\b/, name: "git reset --hard" },
@@ -59,7 +60,25 @@ var DANGEROUS_GIT_PATTERNS = [
   { pattern: /\bgit\s+push\s+.*(-f|--force)\b/, name: "git push --force" },
   { pattern: /\bgit\s+branch\s+.*-D\b/, name: "git branch -D" },
   { pattern: /\bgit\s+stash\s+drop\b/, name: "git stash drop" },
-  { pattern: /\bgit\s+stash\s+clear\b/, name: "git stash clear" }
+  { pattern: /\bgit\s+stash\s+clear\b/, name: "git stash clear" },
+  // System — always dangerous regardless of path
+  { pattern: /\bmkfs(\.\w+)?\s+\/dev\//, name: "mkfs" },
+  {
+    pattern: /(\w+|:)\(\)\s*\{[^}]*\1\s*\|\s*\1[^}]*&/,
+    name: "fork bomb (recursive)"
+  },
+  {
+    pattern: /while\s+(true|:|1)\b.*\bdo\b.*;?\s*\b(bash|sh|zsh)\b.*&.*\bdone\b/,
+    name: "fork bomb (loop)"
+  },
+  { pattern: /\b(curl|wget)\b.+\|\s*(ba)?sh\b/, name: "pipe to shell" },
+  { pattern: /\beval\b.+\$\(.*(curl|wget)\b/, name: "eval remote code" },
+  {
+    pattern: /\bdocker\s+volume\s+(rm|prune)\b/,
+    name: "docker volume rm/prune"
+  },
+  { pattern: /\bcrontab\s+-r\b/, name: "crontab -r" },
+  { pattern: /\bchmod\b.*\b777\b/, name: "chmod 777" }
 ];
 
 // packages/core/path-validator.ts
@@ -322,12 +341,12 @@ var CommandAnalyzer = class {
     }
     return tokens[i] || null;
   }
-  checkDangerousGitCommands(command) {
-    for (const { pattern, name } of DANGEROUS_GIT_PATTERNS) {
+  checkAlwaysBlockedPatterns(command) {
+    for (const { pattern, name } of ALWAYS_BLOCKED_PATTERNS) {
       if (pattern.test(command)) {
         return {
           blocked: true,
-          reason: `Dangerous git command blocked: ${name}`
+          reason: `Dangerous command blocked: ${name}`
         };
       }
     }
@@ -477,7 +496,7 @@ var CommandAnalyzer = class {
     return this.checkWriteCommand(baseCmd, paths, resolveBase);
   }
   analyze(command) {
-    const gitResult = this.checkDangerousGitCommands(command);
+    const gitResult = this.checkAlwaysBlockedPatterns(command);
     if (gitResult.blocked) return gitResult;
     const redirectResult = this.checkRedirects(command);
     if (redirectResult.blocked) return redirectResult;

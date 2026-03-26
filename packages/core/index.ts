@@ -2,7 +2,7 @@ export { CommandAnalyzer, type AnalysisResult } from "./command-analyzer.js";
 export { PathValidator } from "./path-validator.js";
 export {
   DANGEROUS_COMMANDS,
-  DANGEROUS_GIT_PATTERNS,
+  ALWAYS_BLOCKED_PATTERNS,
   DANGEROUS_PATTERNS,
   PLATFORM_PATHS,
   REDIRECT_PATTERN,

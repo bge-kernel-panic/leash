@@ -4,7 +4,7 @@ import { PathValidator } from "./path-validator.js";
 import {
   DANGEROUS_COMMANDS,
   DANGEROUS_PATTERNS,
-  DANGEROUS_GIT_PATTERNS,
+  ALWAYS_BLOCKED_PATTERNS,
   REDIRECT_PATTERN,
 } from "./constants.js";
 
@@ -269,12 +269,12 @@ export class CommandAnalyzer {
     return tokens[i] || null;
   }
 
-  private checkDangerousGitCommands(command: string): AnalysisResult {
-    for (const { pattern, name } of DANGEROUS_GIT_PATTERNS) {
+  private checkAlwaysBlockedPatterns(command: string): AnalysisResult {
+    for (const { pattern, name } of ALWAYS_BLOCKED_PATTERNS) {
       if (pattern.test(command)) {
         return {
           blocked: true,
-          reason: `Dangerous git command blocked: ${name}`,
+          reason: `Dangerous command blocked: ${name}`,
         };
       }
     }
@@ -471,7 +471,7 @@ export class CommandAnalyzer {
   }
 
   analyze(command: string): AnalysisResult {
-    const gitResult = this.checkDangerousGitCommands(command);
+    const gitResult = this.checkAlwaysBlockedPatterns(command);
     if (gitResult.blocked) return gitResult;
 
     const redirectResult = this.checkRedirects(command);
