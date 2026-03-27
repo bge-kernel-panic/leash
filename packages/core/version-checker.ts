@@ -16,7 +16,7 @@ function getVersion(): string {
     if (existsSync(path)) {
       try {
         const pkg = JSON.parse(readFileSync(path, "utf-8"));
-        if (pkg.name === "@melihmucuk/leash") {
+        if (pkg.name === "@bge-kernel-panic/leash") {
           return pkg.version;
         }
       } catch {}
@@ -36,6 +36,22 @@ export interface UpdateCheckResult {
   currentVersion: string;
 }
 
+function parseVersionPart(part: string): number {
+  return parseInt(part.split(/[-_]/)[0], 10) || 0;
+}
+
+function isNewerVersion(latest: string, current: string): boolean {
+  const latestParts = latest.split(".").map(parseVersionPart);
+  const currentParts = current.split(".").map(parseVersionPart);
+  const len = Math.max(latestParts.length, currentParts.length);
+  for (let i = 0; i < len; i++) {
+    const l = latestParts[i] ?? 0;
+    const c = currentParts[i] ?? 0;
+    if (l !== c) return l > c;
+  }
+  return false;
+}
+
 export async function checkForUpdates(): Promise<UpdateCheckResult> {
   try {
     const response = await fetch(NPM_REGISTRY_URL);
@@ -44,7 +60,7 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
     }
     const data = (await response.json()) as { version: string };
     return {
-      hasUpdate: data.version !== CURRENT_VERSION,
+      hasUpdate: isNewerVersion(data.version, CURRENT_VERSION),
       latestVersion: data.version,
       currentVersion: CURRENT_VERSION,
     };

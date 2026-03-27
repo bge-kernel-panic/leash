@@ -554,7 +554,7 @@ function getVersion() {
     if (existsSync(path)) {
       try {
         const pkg = JSON.parse(readFileSync(path, "utf-8"));
-        if (pkg.name === "@melihmucuk/leash") {
+        if (pkg.name === "@bge-kernel-panic/leash") {
           return pkg.version;
         }
       } catch {
@@ -565,6 +565,20 @@ function getVersion() {
 }
 var CURRENT_VERSION = getVersion();
 var NPM_REGISTRY_URL = "https://registry.npmjs.org/@melihmucuk/leash/latest";
+function parseVersionPart(part) {
+  return parseInt(part.split(/[-_]/)[0], 10) || 0;
+}
+function isNewerVersion(latest, current) {
+  const latestParts = latest.split(".").map(parseVersionPart);
+  const currentParts = current.split(".").map(parseVersionPart);
+  const len = Math.max(latestParts.length, currentParts.length);
+  for (let i = 0; i < len; i++) {
+    const l = latestParts[i] ?? 0;
+    const c = currentParts[i] ?? 0;
+    if (l !== c) return l > c;
+  }
+  return false;
+}
 async function checkForUpdates() {
   try {
     const response = await fetch(NPM_REGISTRY_URL);
@@ -573,7 +587,7 @@ async function checkForUpdates() {
     }
     const data = await response.json();
     return {
-      hasUpdate: data.version !== CURRENT_VERSION,
+      hasUpdate: isNewerVersion(data.version, CURRENT_VERSION),
       latestVersion: data.version,
       currentVersion: CURRENT_VERSION
     };
