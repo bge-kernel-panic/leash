@@ -1,6 +1,6 @@
 {
-  "name": "@melihmucuk/leash",
-  "version": "1.0.11",
+  "name": "@bge-kernel-panic/leash",
+  "version": "1.0.12",
   "type": "module",
   "description": "Security guardrails for AI coding agents",
   "bin": {
@@ -33,16 +33,16 @@
       "./dist/pi/leash.js"
     ]
   },
-  "homepage": "https://github.com/melihmucuk/leash",
+  "homepage": "https://github.com/bge-kernel-panic/leash",
   "bugs": {
-    "url": "https://github.com/melihmucuk/leash/issues"
+    "url": "https://github.com/bge-kernel-panic/leash/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/melihmucuk/leash.git"
+    "url": "git+https://github.com/bge-kernel-panic/leash.git"
   },
   "scripts": {
-    "test": "npm run build:core && npm run build:cli-lib && node --test 'packages/core/test/*.test.js' 'packages/cli/test/*.test.js'",
+    "test": "npm run build:core && npm run build:cli-lib && node --test packages/core/test/*.test.js packages/cli/test/*.test.js",
     "typecheck": "tsc --noEmit",
     "build": "npm run build:core && npm run build:cli && npm run build:opencode && npm run build:pi && npm run build:claude-code && npm run build:factory",
     "build:core": "esbuild packages/core/*.ts --outdir=packages/core/lib --platform=node --format=esm",
