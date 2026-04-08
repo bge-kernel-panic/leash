@@ -467,6 +467,202 @@ test("allows chmod 755 inside working dir", () => {
   assert.strictEqual(result.blocked, false);
 });
 
+// Github CLI (gh) - blocked commands
+test("blocks gh auth", () => {
+  const result = analyzer.analyze("gh auth login");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh auth"));
+});
+
+test("blocks gh codespace", () => {
+  const result = analyzer.analyze("gh codespace create");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh codespace"));
+});
+
+test("blocks gh issue delete", () => {
+  const result = analyzer.analyze("gh issue delete 42");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh issue delete"));
+});
+
+test("blocks gh pr close", () => {
+  const result = analyzer.analyze("gh pr close 123");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh pr close"));
+});
+
+test("blocks gh pr lock", () => {
+  const result = analyzer.analyze("gh pr lock 123");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh pr lock"));
+});
+
+test("blocks gh pr unlock", () => {
+  const result = analyzer.analyze("gh pr unlock 123");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh pr unlock"));
+});
+
+test("blocks gh pr merge", () => {
+  const result = analyzer.analyze("gh pr merge 123");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh pr merge"));
+});
+
+test("blocks gh project", () => {
+  const result = analyzer.analyze("gh project list");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh project"));
+});
+
+test("blocks gh release delete", () => {
+  const result = analyzer.analyze("gh release delete v1.0.0");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh release delete"));
+});
+
+test("blocks gh release delete-asset", () => {
+  const result = analyzer.analyze("gh release delete-asset v1.0.0 asset.zip");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh release delete"));
+});
+
+test("blocks gh repo create", () => {
+  const result = analyzer.analyze("gh repo create my-repo");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh repo create"));
+});
+
+test("blocks gh repo delete", () => {
+  const result = analyzer.analyze("gh repo delete my-repo");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh repo delete"));
+});
+
+test("blocks gh repo deploy-key", () => {
+  const result = analyzer.analyze("gh repo deploy-key add key.pub");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh repo deploy-key"));
+});
+
+test("blocks gh repo fork", () => {
+  const result = analyzer.analyze("gh repo fork owner/repo");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh repo fork"));
+});
+
+test("blocks gh run delete", () => {
+  const result = analyzer.analyze("gh run delete 12345");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh run delete"));
+});
+
+test("blocks gh workflow disable", () => {
+  const result = analyzer.analyze("gh workflow disable ci.yml");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh workflow disable"));
+});
+
+test("blocks gh agent-task", () => {
+  const result = analyzer.analyze("gh agent-task create");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh agent-task"));
+});
+
+test("blocks gh api (non-graphql)", () => {
+  const result = analyzer.analyze("gh api repos/owner/repo");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh api"));
+});
+
+test("allows gh api graphql", () => {
+  const result = analyzer.analyze("gh api graphql -f query='{ viewer { login } }'");
+  assert.strictEqual(result.blocked, false);
+});
+
+test("blocks gh attestation", () => {
+  const result = analyzer.analyze("gh attestation verify artifact.tar.gz");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh attestation"));
+});
+
+test("blocks gh copilot", () => {
+  const result = analyzer.analyze("gh copilot suggest");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh copilot"));
+});
+
+test("blocks gh gpg-keys", () => {
+  const result = analyzer.analyze("gh gpg-keys add key.gpg");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh gpg-keys"));
+});
+
+test("blocks gh label delete", () => {
+  const result = analyzer.analyze("gh label delete bug");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh label delete"));
+});
+
+test("blocks gh secret", () => {
+  const result = analyzer.analyze("gh secret set MY_SECRET");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh secret"));
+});
+
+test("blocks gh ssh-key", () => {
+  const result = analyzer.analyze("gh ssh-key add key.pub");
+  assert.strictEqual(result.blocked, true);
+  assert.ok(result.reason.includes("gh ssh-key"));
+});
+
+// Safe gh commands (should not be blocked)
+test("allows gh pr list", () => {
+  const result = analyzer.analyze("gh pr list");
+  assert.strictEqual(result.blocked, false);
+});
+
+test("allows gh pr view", () => {
+  const result = analyzer.analyze("gh pr view 123");
+  assert.strictEqual(result.blocked, false);
+});
+
+test("allows gh issue list", () => {
+  const result = analyzer.analyze("gh issue list");
+  assert.strictEqual(result.blocked, false);
+});
+
+test("allows gh issue view", () => {
+  const result = analyzer.analyze("gh issue view 42");
+  assert.strictEqual(result.blocked, false);
+});
+
+test("allows gh repo view", () => {
+  const result = analyzer.analyze("gh repo view owner/repo");
+  assert.strictEqual(result.blocked, false);
+});
+
+test("allows gh run list", () => {
+  const result = analyzer.analyze("gh run list");
+  assert.strictEqual(result.blocked, false);
+});
+
+test("allows gh run view", () => {
+  const result = analyzer.analyze("gh run view 12345");
+  assert.strictEqual(result.blocked, false);
+});
+
+test("allows gh pr create", () => {
+  const result = analyzer.analyze("gh pr create --title 'fix' --body 'desc'");
+  assert.strictEqual(result.blocked, false);
+});
+
+test("allows gh search", () => {
+  const result = analyzer.analyze("gh search issues --repo owner/repo 'bug'");
+  assert.strictEqual(result.blocked, false);
+});
+
 // Safe git commands (should not be blocked)
 test("allows git status", () => {
   const result = analyzer.analyze("git status");

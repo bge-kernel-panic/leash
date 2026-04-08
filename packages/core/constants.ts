@@ -74,7 +74,6 @@ export const ALWAYS_BLOCKED_PATTERNS: Array<{ pattern: RegExp; name: string }> =
     { pattern: /\bgh\s+pr merge\b/, name: "gh pr merge" },
     { pattern: /\bgh\s+project\b/, name: "gh project" },
     { pattern: /\bgh\s+release delete\b/, name: "gh release delete" },
-    { pattern: /\bgh\s+release delete-asset\b/, name: "gh release delete-asset" },
     { pattern: /\bgh\s+repo create\b/, name: "gh repo create" },
     { pattern: /\bgh\s+repo delete\b/, name: "gh repo delete" },
     { pattern: /\bgh\s+repo deploy-key\b/, name: "gh repo deploy-key" },
