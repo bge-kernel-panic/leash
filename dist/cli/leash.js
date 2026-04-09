@@ -13,7 +13,7 @@ import { dirname as dirname3, join as join2, resolve, relative } from "path";
 import { homedir } from "os";
 import { fileURLToPath as fileURLToPath2 } from "url";
 import { execSync } from "child_process";
-import { createInterface } from "readline";
+import { createInterface } from "node:readline/promises";
 
 // packages/cli/lib.ts
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
@@ -1822,7 +1822,6 @@ function allow(pathArg) {
   } catch {
     console.error(`[error] Cannot resolve path: ${resolved}`);
     process.exit(1);
-    return;
   }
   if (!statSync(realPath).isDirectory()) {
     console.error(`[error] Not a directory: ${realPath}`);
@@ -1844,6 +1843,27 @@ function allow(pathArg) {
   current.push(realPath);
   writeAllowList(current);
   console.log(`[ok] Allowed: ${realPath}`);
+}
+function formatNumberedList(items) {
+  return items.map((item, i) => `  ${i + 1}. ${item}`).join("\n");
+}
+async function promptLine(question) {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  const answer = await rl.question(question);
+  rl.close();
+  return answer.trim();
+}
+function parseSelection(answer, max) {
+  if (answer === "q" || answer === "") return null;
+  const num = parseInt(answer, 10);
+  if (isNaN(num) || num < 1 || num > max) {
+    console.error("[error] Invalid selection");
+    process.exit(1);
+  }
+  return num;
 }
 async function revoke(pathArg) {
   if (pathArg === "--all") {
@@ -1877,30 +1897,14 @@ async function revoke(pathArg) {
     console.log("Allowlist is empty");
     return;
   }
-  console.log("Allowed directories:");
-  for (let i = 0; i < current.length; i++) {
-    console.log(`  ${i + 1}. ${current[i]}`);
-  }
-  console.log();
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-  const answer = await new Promise((res) => {
-    rl.question("Pick a number to revoke (or q to cancel): ", (ans) => {
-      rl.close();
-      res(ans.trim());
-    });
-  });
-  if (answer === "q" || answer === "") {
-    return;
-  }
-  const num = parseInt(answer, 10);
-  if (isNaN(num) || num < 1 || num > current.length) {
-    console.error("[error] Invalid selection");
-    process.exit(1);
-  }
-  const removed = current.splice(num - 1, 1)[0];
+  const prompt = `Allowed directories:
+${formatNumberedList(current)}
+
+Pick a number to revoke (or q to cancel): `;
+  const answer = await promptLine(prompt);
+  const selection = parseSelection(answer, current.length);
+  if (selection === null) return;
+  const removed = current.splice(selection - 1, 1)[0];
   writeAllowList(current);
   console.log(`[ok] Revoked: ${removed}`);
 }

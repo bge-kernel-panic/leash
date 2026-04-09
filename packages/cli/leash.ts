@@ -10,7 +10,7 @@ import { dirname, join, resolve, relative } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { execSync } from "child_process";
-import { createInterface } from "readline/promises";
+import { createInterface } from "node:readline/promises";
 import { PLATFORMS, setupPlatform, removePlatform } from "./lib.js";
 import { checkForUpdates } from "../core/version-checker.js";
 import { parseLeashrc } from "../core/leashrc.js";
