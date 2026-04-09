@@ -96,6 +96,26 @@ test("opencode: setup adds permission when plugin exists but permission missing"
   cleanup();
 });
 
+test("opencode: setup converts string permission.bash to object", () => {
+  setup();
+  const configPath = getConfigPath("opencode-string-bash");
+  writeTestConfig("opencode-string-bash", {
+    plugin: ["/other/plugin.js"],
+    permission: { bash: "allow" },
+  });
+
+  const result = setupPlatform("opencode", configPath, LEASH_PATH);
+
+  assert.strictEqual(result.success, true);
+
+  const config = readTestConfig("opencode-string-bash");
+  assert.deepStrictEqual(config.plugin, ["/other/plugin.js", LEASH_PATH]);
+  assert.strictEqual(config.permission.bash["*"], "allow");
+  assert.strictEqual(config.permission.bash["leash allow *"], "ask");
+
+  cleanup();
+});
+
 test("opencode: setup skips permission if user has existing leash rule", () => {
   setup();
   const configPath = getConfigPath("opencode-user-perm");

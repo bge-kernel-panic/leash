@@ -254,8 +254,16 @@ function setupOpenCode(configPath: string, leashPath: string): SetupResult {
   }
 
   if (!hasPerm) {
-    const edits = jsonc.modify(updated, ["permission", "bash", "leash allow *"], "ask", { formattingOptions: formatOptions });
-    updated = jsonc.applyEdits(updated, edits);
+    // If permission.bash is a string (e.g. "allow"), replace it with an object
+    // preserving the original value as the default "*" rule
+    if (typeof config.permission?.bash === "string") {
+      const bashObj = { "*": config.permission.bash, "leash allow *": "ask" };
+      const edits = jsonc.modify(updated, ["permission", "bash"], bashObj, { formattingOptions: formatOptions });
+      updated = jsonc.applyEdits(updated, edits);
+    } else {
+      const edits = jsonc.modify(updated, ["permission", "bash", "leash allow *"], "ask", { formattingOptions: formatOptions });
+      updated = jsonc.applyEdits(updated, edits);
+    }
   }
 
   const newContent = updated;

@@ -1563,8 +1563,14 @@ function setupOpenCode(configPath, leashPath) {
     updated = applyEdits(updated, edits);
   }
   if (!hasPerm) {
-    const edits = modify(updated, ["permission", "bash", "leash allow *"], "ask", { formattingOptions: formatOptions });
-    updated = applyEdits(updated, edits);
+    if (typeof config.permission?.bash === "string") {
+      const bashObj = { "*": config.permission.bash, "leash allow *": "ask" };
+      const edits = modify(updated, ["permission", "bash"], bashObj, { formattingOptions: formatOptions });
+      updated = applyEdits(updated, edits);
+    } else {
+      const edits = modify(updated, ["permission", "bash", "leash allow *"], "ask", { formattingOptions: formatOptions });
+      updated = applyEdits(updated, edits);
+    }
   }
   const newContent = updated;
   const dir = dirname(configPath);

@@ -172,8 +172,14 @@ function setupOpenCode(configPath, leashPath) {
     updated = jsonc.applyEdits(updated, edits);
   }
   if (!hasPerm) {
-    const edits = jsonc.modify(updated, ["permission", "bash", "leash allow *"], "ask", { formattingOptions: formatOptions });
-    updated = jsonc.applyEdits(updated, edits);
+    if (typeof config.permission?.bash === "string") {
+      const bashObj = { "*": config.permission.bash, "leash allow *": "ask" };
+      const edits = jsonc.modify(updated, ["permission", "bash"], bashObj, { formattingOptions: formatOptions });
+      updated = jsonc.applyEdits(updated, edits);
+    } else {
+      const edits = jsonc.modify(updated, ["permission", "bash", "leash allow *"], "ask", { formattingOptions: formatOptions });
+      updated = jsonc.applyEdits(updated, edits);
+    }
   }
   const newContent = updated;
   const dir = dirname(configPath);
