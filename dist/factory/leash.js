@@ -639,7 +639,7 @@ function getVersion() {
   return "0.0.0";
 }
 var CURRENT_VERSION = getVersion();
-var NPM_REGISTRY_URL = "https://registry.npmjs.org/@melihmucuk/leash/latest";
+var VERSION_URL = "https://raw.githubusercontent.com/bge-kernel-panic/leash/main/package.json";
 function parseVersionPart(part) {
   return parseInt(part.split(/[-_]/)[0], 10) || 0;
 }
@@ -656,7 +656,7 @@ function isNewerVersion(latest, current) {
 }
 async function checkForUpdates() {
   try {
-    const response = await fetch(NPM_REGISTRY_URL);
+    const response = await fetch(VERSION_URL);
     if (!response.ok) {
       return { hasUpdate: false, currentVersion: CURRENT_VERSION };
     }

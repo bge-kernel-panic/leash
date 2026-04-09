@@ -30,7 +30,8 @@ function getVersion(): string {
 
 export const CURRENT_VERSION: string = getVersion();
 
-const NPM_REGISTRY_URL = "https://registry.npmjs.org/@melihmucuk/leash/latest";
+const VERSION_URL =
+  "https://raw.githubusercontent.com/bge-kernel-panic/leash/main/package.json";
 
 export interface UpdateCheckResult {
   hasUpdate: boolean;
@@ -56,7 +57,7 @@ function isNewerVersion(latest: string, current: string): boolean {
 
 export async function checkForUpdates(): Promise<UpdateCheckResult> {
   try {
-    const response = await fetch(NPM_REGISTRY_URL);
+    const response = await fetch(VERSION_URL);
     if (!response.ok) {
       return { hasUpdate: false, currentVersion: CURRENT_VERSION };
     }

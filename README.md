@@ -1,7 +1,5 @@
 # Leash 🔒
 
-[![npm version](https://img.shields.io/npm/v/@melihmucuk/leash.svg)](https://www.npmjs.com/package/@melihmucuk/leash)
-
 **Security guardrails for AI coding agents.** Sandboxes file system access, blocks dangerous commands outside project directory, prevents destructive git operations, catches agent hallucinations before they cause damage.
 
 ## Why Leash?
@@ -32,14 +30,8 @@ Links:
 ## Quick Start
 
 ```bash
-# Clone the repo somewhere
-git clone https://github.com/bge-kernel-panic/leash.git
-
-# Build
-npm i && npm run build
-
-# Install leash globally
-npm install -g .
+# Install leash globally from GitHub
+npm install -g github:bge-kernel-panic/leash
 
 # Setup leash for your platform
 leash setup <platform>
