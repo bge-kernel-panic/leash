@@ -42,7 +42,6 @@
     "url": "git+https://github.com/bge-kernel-panic/leash.git"
   },
   "scripts": {
-    "prepare": "npm run build",
     "test": "npm run build:core && npm run build:cli-lib && node --test packages/core/test/*.test.js packages/cli/test/*.test.js",
     "typecheck": "tsc --noEmit",
     "build": "npm run build:core && npm run build:cli && npm run build:opencode && npm run build:pi && npm run build:claude-code && npm run build:factory",
