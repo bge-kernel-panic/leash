@@ -10,6 +10,15 @@ interface Config {
     SessionStart?: HookEntry[];
     PreToolUse?: HookEntry[];
   };
+  permissions?: {
+    allow?: string[];
+    ask?: string[];
+    deny?: string[];
+  };
+  permission?: {
+    bash?: Record<string, string>;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -43,12 +52,29 @@ interface Platform {
   remove?: (config: Config) => boolean;
 }
 
+function hasLeashPermission(config: Config): boolean {
+  const hookPerms = [
+    ...(config.permissions?.allow || []),
+    ...(config.permissions?.ask || []),
+    ...(config.permissions?.deny || []),
+  ];
+  if (hookPerms.some((p) => p.includes("leash"))) return true;
+
+  const bashPerms = Object.keys(config.permission?.bash || {});
+  if (bashPerms.some((k) => k.includes("leash"))) return true;
+
+  return false;
+}
+
 function createHookPlatform(opts: {
   name: string;
   configPath: string;
   distPath: string;
   preToolUseMatcher: string;
+  bashToolName: string;
 }): Platform {
+  const askRule = `${opts.bashToolName}(leash allow *)`;
+
   return {
     name: opts.name,
     configPath: opts.configPath,
@@ -63,7 +89,9 @@ function createHookPlatform(opts: {
       const inPreToolUse = config.hooks.PreToolUse?.some((entry) =>
         entry.hooks?.some((h) => h.command?.includes("leash"))
       );
-      if (inSessionStart && inPreToolUse) {
+      const hasPerm = hasLeashPermission(config);
+
+      if (inSessionStart && inPreToolUse && hasPerm) {
         return { skipped: true };
       }
 
@@ -80,13 +108,19 @@ function createHookPlatform(opts: {
         });
       }
 
+      if (!hasPerm) {
+        config.permissions = config.permissions || {};
+        config.permissions.ask = config.permissions.ask || [];
+        config.permissions.ask.push(askRule);
+      }
+
       return { skipped: false };
     },
     remove: (config: Config): boolean => {
-      if (!config.hooks) return false;
+      if (!config.hooks && !config.permissions) return false;
       let removed = false;
 
-      if (config.hooks.SessionStart) {
+      if (config.hooks?.SessionStart) {
         const before = config.hooks.SessionStart.length;
         config.hooks.SessionStart = config.hooks.SessionStart.filter(
           (entry) => !entry.hooks?.some((h) => h.command?.includes("leash"))
@@ -94,12 +128,23 @@ function createHookPlatform(opts: {
         if (config.hooks.SessionStart.length < before) removed = true;
       }
 
-      if (config.hooks.PreToolUse) {
+      if (config.hooks?.PreToolUse) {
         const before = config.hooks.PreToolUse.length;
         config.hooks.PreToolUse = config.hooks.PreToolUse.filter(
           (entry) => !entry.hooks?.some((h) => h.command?.includes("leash"))
         );
         if (config.hooks.PreToolUse.length < before) removed = true;
+      }
+
+      if (config.permissions?.ask) {
+        const before = config.permissions.ask.length;
+        config.permissions.ask = config.permissions.ask.filter(
+          (p) => p !== askRule
+        );
+        if (config.permissions.ask.length < before) removed = true;
+        if (config.permissions.ask.length === 0) {
+          delete config.permissions.ask;
+        }
       }
 
       return removed;
@@ -142,12 +187,14 @@ export const PLATFORMS: Record<string, Platform> = {
     configPath: ".claude/settings.json",
     distPath: "claude-code/leash.js",
     preToolUseMatcher: "Bash|Write|Edit",
+    bashToolName: "Bash",
   }),
   factory: createHookPlatform({
     name: "Factory",
     configPath: ".factory/settings.json",
     distPath: "factory/leash.js",
     preToolUseMatcher: "Execute|Write|Edit",
+    bashToolName: "Execute",
   }),
 };
 
@@ -187,18 +234,31 @@ function setupOpenCode(configPath: string, leashPath: string): SetupResult {
     }
   }
 
-  if (config.plugin?.some((p) => p.includes("leash"))) {
+  const hasPlugin = config.plugin?.some((p) => p.includes("leash"));
+  const hasPerm = hasLeashPermission(config);
+
+  if (hasPlugin && hasPerm) {
     return { skipped: true, platform: "OpenCode" };
   }
 
-  let edits: jsonc.EditResult;
-  if (!config.plugin) {
-    edits = jsonc.modify(content, ["plugin"], [leashPath], { formattingOptions: formatOptions });
-  } else {
-    edits = jsonc.modify(content, ["plugin", -1], leashPath, { formattingOptions: formatOptions });
+  let updated = content;
+
+  if (!hasPlugin) {
+    let edits: jsonc.EditResult;
+    if (!config.plugin) {
+      edits = jsonc.modify(updated, ["plugin"], [leashPath], { formattingOptions: formatOptions });
+    } else {
+      edits = jsonc.modify(updated, ["plugin", -1], leashPath, { formattingOptions: formatOptions });
+    }
+    updated = jsonc.applyEdits(updated, edits);
   }
 
-  const newContent = jsonc.applyEdits(content, edits);
+  if (!hasPerm) {
+    const edits = jsonc.modify(updated, ["permission", "bash", "leash allow *"], "ask", { formattingOptions: formatOptions });
+    updated = jsonc.applyEdits(updated, edits);
+  }
+
+  const newContent = updated;
 
   const dir = dirname(configPath);
   if (!existsSync(dir)) {
@@ -221,20 +281,27 @@ function removeOpenCode(configPath: string): RemoveResult {
     return { error: `Invalid JSON/JSONC in ${configPath}` };
   }
 
-  if (!config.plugin) {
-    return { notInstalled: true, platform: "OpenCode" };
-  }
+  const leashIndex = config.plugin?.findIndex((p) => p.includes("leash")) ?? -1;
+  const hasPerm = config.permission?.bash?.["leash allow *"] !== undefined;
 
-  const leashIndex = config.plugin.findIndex((p) => p.includes("leash"));
-  if (leashIndex === -1) {
+  if (leashIndex === -1 && !hasPerm) {
     return { notInstalled: true, platform: "OpenCode" };
   }
 
   const formatOptions: jsonc.FormattingOptions = { tabSize: 2, insertSpaces: true };
-  const edits = jsonc.modify(content, ["plugin", leashIndex], undefined, { formattingOptions: formatOptions });
-  const newContent = jsonc.applyEdits(content, edits);
+  let updated = content;
 
-  writeFileSync(configPath, newContent);
+  if (leashIndex !== -1) {
+    const edits = jsonc.modify(updated, ["plugin", leashIndex], undefined, { formattingOptions: formatOptions });
+    updated = jsonc.applyEdits(updated, edits);
+  }
+
+  if (hasPerm) {
+    const edits = jsonc.modify(updated, ["permission", "bash", "leash allow *"], undefined, { formattingOptions: formatOptions });
+    updated = jsonc.applyEdits(updated, edits);
+  }
+
+  writeFileSync(configPath, updated);
   return { success: true, platform: "OpenCode" };
 }
 

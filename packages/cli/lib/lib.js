@@ -1,7 +1,19 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import { dirname } from "path";
 import * as jsonc from "jsonc-parser";
+function hasLeashPermission(config) {
+  const hookPerms = [
+    ...config.permissions?.allow || [],
+    ...config.permissions?.ask || [],
+    ...config.permissions?.deny || []
+  ];
+  if (hookPerms.some((p) => p.includes("leash"))) return true;
+  const bashPerms = Object.keys(config.permission?.bash || {});
+  if (bashPerms.some((k) => k.includes("leash"))) return true;
+  return false;
+}
 function createHookPlatform(opts) {
+  const askRule = `${opts.bashToolName}(leash allow *)`;
   return {
     name: opts.name,
     configPath: opts.configPath,
@@ -15,7 +27,8 @@ function createHookPlatform(opts) {
       const inPreToolUse = config.hooks.PreToolUse?.some(
         (entry) => entry.hooks?.some((h) => h.command?.includes("leash"))
       );
-      if (inSessionStart && inPreToolUse) {
+      const hasPerm = hasLeashPermission(config);
+      if (inSessionStart && inPreToolUse && hasPerm) {
         return { skipped: true };
       }
       if (!inSessionStart) {
@@ -29,24 +42,39 @@ function createHookPlatform(opts) {
           hooks: [hookCommand]
         });
       }
+      if (!hasPerm) {
+        config.permissions = config.permissions || {};
+        config.permissions.ask = config.permissions.ask || [];
+        config.permissions.ask.push(askRule);
+      }
       return { skipped: false };
     },
     remove: (config) => {
-      if (!config.hooks) return false;
+      if (!config.hooks && !config.permissions) return false;
       let removed = false;
-      if (config.hooks.SessionStart) {
+      if (config.hooks?.SessionStart) {
         const before = config.hooks.SessionStart.length;
         config.hooks.SessionStart = config.hooks.SessionStart.filter(
           (entry) => !entry.hooks?.some((h) => h.command?.includes("leash"))
         );
         if (config.hooks.SessionStart.length < before) removed = true;
       }
-      if (config.hooks.PreToolUse) {
+      if (config.hooks?.PreToolUse) {
         const before = config.hooks.PreToolUse.length;
         config.hooks.PreToolUse = config.hooks.PreToolUse.filter(
           (entry) => !entry.hooks?.some((h) => h.command?.includes("leash"))
         );
         if (config.hooks.PreToolUse.length < before) removed = true;
+      }
+      if (config.permissions?.ask) {
+        const before = config.permissions.ask.length;
+        config.permissions.ask = config.permissions.ask.filter(
+          (p) => p !== askRule
+        );
+        if (config.permissions.ask.length < before) removed = true;
+        if (config.permissions.ask.length === 0) {
+          delete config.permissions.ask;
+        }
       }
       return removed;
     }
@@ -86,13 +114,15 @@ const PLATFORMS = {
     name: "Claude Code",
     configPath: ".claude/settings.json",
     distPath: "claude-code/leash.js",
-    preToolUseMatcher: "Bash|Write|Edit"
+    preToolUseMatcher: "Bash|Write|Edit",
+    bashToolName: "Bash"
   }),
   factory: createHookPlatform({
     name: "Factory",
     configPath: ".factory/settings.json",
     distPath: "factory/leash.js",
-    preToolUseMatcher: "Execute|Write|Edit"
+    preToolUseMatcher: "Execute|Write|Edit",
+    bashToolName: "Execute"
   })
 };
 function readConfig(configPath) {
@@ -126,16 +156,26 @@ function setupOpenCode(configPath, leashPath) {
       return { error: `Invalid JSON/JSONC in ${configPath}` };
     }
   }
-  if (config.plugin?.some((p) => p.includes("leash"))) {
+  const hasPlugin = config.plugin?.some((p) => p.includes("leash"));
+  const hasPerm = hasLeashPermission(config);
+  if (hasPlugin && hasPerm) {
     return { skipped: true, platform: "OpenCode" };
   }
-  let edits;
-  if (!config.plugin) {
-    edits = jsonc.modify(content, ["plugin"], [leashPath], { formattingOptions: formatOptions });
-  } else {
-    edits = jsonc.modify(content, ["plugin", -1], leashPath, { formattingOptions: formatOptions });
+  let updated = content;
+  if (!hasPlugin) {
+    let edits;
+    if (!config.plugin) {
+      edits = jsonc.modify(updated, ["plugin"], [leashPath], { formattingOptions: formatOptions });
+    } else {
+      edits = jsonc.modify(updated, ["plugin", -1], leashPath, { formattingOptions: formatOptions });
+    }
+    updated = jsonc.applyEdits(updated, edits);
   }
-  const newContent = jsonc.applyEdits(content, edits);
+  if (!hasPerm) {
+    const edits = jsonc.modify(updated, ["permission", "bash", "leash allow *"], "ask", { formattingOptions: formatOptions });
+    updated = jsonc.applyEdits(updated, edits);
+  }
+  const newContent = updated;
   const dir = dirname(configPath);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -153,17 +193,22 @@ function removeOpenCode(configPath) {
   if (errors.length > 0) {
     return { error: `Invalid JSON/JSONC in ${configPath}` };
   }
-  if (!config.plugin) {
-    return { notInstalled: true, platform: "OpenCode" };
-  }
-  const leashIndex = config.plugin.findIndex((p) => p.includes("leash"));
-  if (leashIndex === -1) {
+  const leashIndex = config.plugin?.findIndex((p) => p.includes("leash")) ?? -1;
+  const hasPerm = config.permission?.bash?.["leash allow *"] !== void 0;
+  if (leashIndex === -1 && !hasPerm) {
     return { notInstalled: true, platform: "OpenCode" };
   }
   const formatOptions = { tabSize: 2, insertSpaces: true };
-  const edits = jsonc.modify(content, ["plugin", leashIndex], void 0, { formattingOptions: formatOptions });
-  const newContent = jsonc.applyEdits(content, edits);
-  writeFileSync(configPath, newContent);
+  let updated = content;
+  if (leashIndex !== -1) {
+    const edits = jsonc.modify(updated, ["plugin", leashIndex], void 0, { formattingOptions: formatOptions });
+    updated = jsonc.applyEdits(updated, edits);
+  }
+  if (hasPerm) {
+    const edits = jsonc.modify(updated, ["permission", "bash", "leash allow *"], void 0, { formattingOptions: formatOptions });
+    updated = jsonc.applyEdits(updated, edits);
+  }
+  writeFileSync(configPath, updated);
   return { success: true, platform: "OpenCode" };
 }
 function setupPlatform(platformKey, configPath, leashPath) {

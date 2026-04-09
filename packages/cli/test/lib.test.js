@@ -40,6 +40,7 @@ test("opencode: setup on empty config", () => {
 
   const config = readTestConfig("opencode-empty");
   assert.deepStrictEqual(config.plugin, [LEASH_PATH]);
+  assert.strictEqual(config.permission.bash["leash allow *"], "ask");
 
   cleanup();
 });
@@ -68,11 +69,47 @@ test("opencode: setup skips if already installed", () => {
   const configPath = getConfigPath("opencode-skip");
   writeTestConfig("opencode-skip", {
     plugin: ["/some/leash/path.js"],
+    permission: { bash: { "leash allow *": "ask" } },
   });
 
   const result = setupPlatform("opencode", configPath, LEASH_PATH);
 
   assert.strictEqual(result.skipped, true);
+
+  cleanup();
+});
+
+test("opencode: setup adds permission when plugin exists but permission missing", () => {
+  setup();
+  const configPath = getConfigPath("opencode-add-perm");
+  writeTestConfig("opencode-add-perm", {
+    plugin: ["/some/leash/path.js"],
+  });
+
+  const result = setupPlatform("opencode", configPath, LEASH_PATH);
+
+  assert.strictEqual(result.success, true);
+
+  const config = readTestConfig("opencode-add-perm");
+  assert.strictEqual(config.permission.bash["leash allow *"], "ask");
+
+  cleanup();
+});
+
+test("opencode: setup skips permission if user has existing leash rule", () => {
+  setup();
+  const configPath = getConfigPath("opencode-user-perm");
+  writeTestConfig("opencode-user-perm", {
+    permission: { bash: { "leash *": "deny" } },
+  });
+
+  const result = setupPlatform("opencode", configPath, LEASH_PATH);
+
+  assert.strictEqual(result.success, true);
+
+  const config = readTestConfig("opencode-user-perm");
+  assert.strictEqual(config.permission.bash["leash *"], "deny");
+  assert.strictEqual(config.permission.bash["leash allow *"], undefined);
 
   cleanup();
 });
@@ -83,6 +120,7 @@ test("opencode: remove works", () => {
   writeTestConfig("opencode-remove", {
     provider: "anthropic",
     plugin: ["/other/plugin.js", LEASH_PATH],
+    permission: { bash: { "leash allow *": "ask" } },
   });
 
   const result = removePlatform("opencode", configPath);
@@ -92,6 +130,7 @@ test("opencode: remove works", () => {
   const config = readTestConfig("opencode-remove");
   assert.strictEqual(config.provider, "anthropic");
   assert.deepStrictEqual(config.plugin, ["/other/plugin.js"]);
+  assert.strictEqual(config.permission.bash["leash allow *"], undefined);
 
   cleanup();
 });
@@ -233,6 +272,7 @@ test("claude-code: setup on empty config", () => {
     config.hooks.PreToolUse[0].hooks[0].command,
     `node ${LEASH_PATH}`
   );
+  assert.deepStrictEqual(config.permissions.ask, ["Bash(leash allow *)"]);
 
   cleanup();
 });
@@ -254,7 +294,10 @@ test("claude-code: setup merges with existing hooks", () => {
   assert.strictEqual(result.success, true);
 
   const config = readTestConfig("claude-merge");
-  assert.deepStrictEqual(config.permissions, { allow: ["Bash"] });
+  assert.deepStrictEqual(config.permissions, {
+    allow: ["Bash"],
+    ask: ["Bash(leash allow *)"],
+  });
   assert.strictEqual(config.hooks.SessionStart.length, 1);
   assert.strictEqual(config.hooks.PreToolUse.length, 2);
   assert.strictEqual(config.hooks.PreToolUse[0].matcher, ".*");
@@ -267,6 +310,7 @@ test("claude-code: setup skips if already installed", () => {
   setup();
   const configPath = getConfigPath("claude-skip");
   writeTestConfig("claude-skip", {
+    permissions: { ask: ["Bash(leash allow *)"] },
     hooks: {
       SessionStart: [
         {
@@ -289,11 +333,58 @@ test("claude-code: setup skips if already installed", () => {
   cleanup();
 });
 
+test("claude-code: setup adds permission when hooks exist but permission missing", () => {
+  setup();
+  const configPath = getConfigPath("claude-add-perm");
+  writeTestConfig("claude-add-perm", {
+    hooks: {
+      SessionStart: [
+        {
+          hooks: [{ type: "command", command: "node /path/to/leash.js" }],
+        },
+      ],
+      PreToolUse: [
+        {
+          matcher: "Bash|Write|Edit",
+          hooks: [{ type: "command", command: "node /path/to/leash.js" }],
+        },
+      ],
+    },
+  });
+
+  const result = setupPlatform("claude-code", configPath, LEASH_PATH);
+
+  assert.strictEqual(result.success, true);
+
+  const config = readTestConfig("claude-add-perm");
+  assert.deepStrictEqual(config.permissions.ask, ["Bash(leash allow *)"]);
+
+  cleanup();
+});
+
+test("claude-code: setup skips permission if user has existing leash rule", () => {
+  setup();
+  const configPath = getConfigPath("claude-user-perm");
+  writeTestConfig("claude-user-perm", {
+    permissions: { deny: ["Bash(leash *)"] },
+  });
+
+  const result = setupPlatform("claude-code", configPath, LEASH_PATH);
+
+  assert.strictEqual(result.success, true);
+
+  const config = readTestConfig("claude-user-perm");
+  assert.deepStrictEqual(config.permissions.deny, ["Bash(leash *)"]);
+  assert.strictEqual(config.permissions.ask, undefined);
+
+  cleanup();
+});
+
 test("claude-code: remove works", () => {
   setup();
   const configPath = getConfigPath("claude-remove");
   writeTestConfig("claude-remove", {
-    permissions: { allow: ["Bash"] },
+    permissions: { allow: ["Bash"], ask: ["Bash(leash allow *)"] },
     hooks: {
       SessionStart: [
         {
@@ -336,6 +427,7 @@ test("factory: setup on empty config", () => {
   assert.strictEqual(config.hooks.SessionStart.length, 1);
   assert.strictEqual(config.hooks.PreToolUse.length, 1);
   assert.strictEqual(config.hooks.PreToolUse[0].matcher, "Execute|Write|Edit");
+  assert.deepStrictEqual(config.permissions.ask, ["Execute(leash allow *)"]);
 
   cleanup();
 });
@@ -344,6 +436,7 @@ test("factory: remove works", () => {
   setup();
   const configPath = getConfigPath("factory-remove");
   writeTestConfig("factory-remove", {
+    permissions: { ask: ["Execute(leash allow *)"] },
     hooks: {
       SessionStart: [
         {
@@ -366,6 +459,7 @@ test("factory: remove works", () => {
   const config = readTestConfig("factory-remove");
   assert.strictEqual(config.hooks.SessionStart.length, 0);
   assert.strictEqual(config.hooks.PreToolUse.length, 0);
+  assert.strictEqual(config.permissions.ask, undefined);
 
   cleanup();
 });
