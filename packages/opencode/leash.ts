@@ -1,9 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin";
-import { CommandAnalyzer, checkForUpdates } from "../core/index.js";
+import { CommandAnalyzer, checkForUpdates, readLeashrc } from "../core/index.js";
 
 export const Leash: Plugin = async ({ directory, client }) => {
-  const analyzer = new CommandAnalyzer(directory);
-
   return {
     event: async ({ event }) => {
       if (event.type === "session.created") {
@@ -15,7 +13,7 @@ export const Leash: Plugin = async ({ directory, client }) => {
         if (update.hasUpdate) {
           await client.tui.showToast({
             body: {
-              message: `🔄 Leash ${update.latestVersion} available.\nRun: leash --update (restart required)`,
+              message: `🔄 Leash ${update.latestVersion} available.\nRun: leash update (restart required)`,
               variant: "warning",
             },
           });
@@ -24,6 +22,9 @@ export const Leash: Plugin = async ({ directory, client }) => {
     },
 
     "tool.execute.before": async (input, output) => {
+      const { allow } = readLeashrc(directory);
+      const analyzer = new CommandAnalyzer(directory, allow);
+
       // Shell command execution
       const shellTools = ["execute", "bash", "shell"];
       if (shellTools.includes(input.tool)) {
@@ -47,12 +48,20 @@ export const Leash: Plugin = async ({ directory, client }) => {
         const result = analyzer.validatePath(path);
 
         if (result.blocked) {
-          throw new Error(
+          const suggestion = analyzer.suggestAllow(path);
+          let msg =
             `File operation blocked: ${path}\n` +
-              `Reason: ${result.reason}\n` +
-              `Working directory: ${directory}\n` +
-              `Action: Guide the user to perform this operation manually.`
-          );
+            `Reason: ${result.reason}\n` +
+            `Working directory: ${directory}\n`;
+
+          if (suggestion) {
+            msg +=
+              `Hint: This path is reachable via symlink "${suggestion}" in your working directory.\n` +
+              `      Run: leash allow ${suggestion}\n`;
+          }
+
+          msg += `Action: Guide the user to perform this operation manually.`;
+          throw new Error(msg);
         }
       }
     },

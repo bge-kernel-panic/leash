@@ -42,26 +42,26 @@ npm i && npm run build
 npm install -g .
 
 # Setup leash for your platform
-leash --setup <platform>
+leash setup <platform>
 
 # Remove leash from a platform
-leash --remove <platform>
+leash remove <platform>
 
 # Update leash anytime
-leash --update
+leash update
 ```
 
-| Platform      | Command                     |
-| ------------- | --------------------------- |
-| OpenCode      | `leash --setup opencode`    |
-| Claude Code   | `leash --setup claude-code` |
-| Factory Droid | `leash --setup factory`     |
+| Platform      | Command                    |
+| ------------- | -------------------------- |
+| OpenCode      | `leash setup opencode`     |
+| Claude Code   | `leash setup claude-code`  |
+| Factory Droid | `leash setup factory`      |
 
 
 <details>
 <summary><b>Manual Setup</b></summary>
 
-If you prefer manual configuration, use `leash --path <platform>` to get the path and add it to your config file.
+If you prefer manual configuration, use `leash path <platform>` to get the path and add it to your config file.
 
 **Pi Coding Agent** - [docs](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md)
 
@@ -69,7 +69,7 @@ Add to `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "extensions": ["<path from leash --path pi>"]
+  "extensions": ["<path from leash path pi>"]
 }
 ```
 
@@ -79,7 +79,7 @@ Add to `~/.config/opencode/opencode.json` (or `opencode.jsonc` if you use that):
 
 ```json
 {
-  "plugin": ["<path from leash --path opencode>"]
+  "plugin": ["<path from leash path opencode>"]
 }
 ```
 
@@ -95,7 +95,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node <path from leash --path claude-code>"
+            "command": "node <path from leash path claude-code>"
           }
         ]
       }
@@ -106,7 +106,7 @@ Add to `~/.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node <path from leash --path claude-code>"
+            "command": "node <path from leash path claude-code>"
           }
         ]
       }
@@ -127,7 +127,7 @@ Add to `~/.factory/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node <path from leash --path factory>"
+            "command": "node <path from leash path factory>"
           }
         ]
       }
@@ -138,7 +138,7 @@ Add to `~/.factory/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "node <path from leash --path factory>"
+            "command": "node <path from leash path factory>"
           }
         ]
       }
@@ -148,6 +148,35 @@ Add to `~/.factory/settings.json`:
 ```
 
 </details>
+
+## Directory Allowlist
+
+By default, leash restricts file operations to the current working directory. To grant the agent access to additional directories (e.g., for multi-project workflows), use the allowlist:
+
+```bash
+# Allow access to another project
+leash allow ~/src/other-project
+
+# Allow via symlink (resolves to real path)
+leash allow ./symlinked-project
+
+# List allowed directories
+leash list
+
+# Revoke access (interactive picker)
+leash revoke
+
+# Revoke a specific directory
+leash revoke ~/src/other-project
+
+# Revoke all
+leash revoke --all
+```
+
+The allowlist is stored in `.leashrc` in the current directory. Paths are resolved to their real absolute path at `allow` time. Only directories within your home directory can be added.
+
+**Security:** The `.leashrc` file is protected: the agent cannot edit it directly. The `leash` CLI itself is blocked from agent use, except for `leash allow <bare-name>` (no slashes or dots), which lets the agent request access to symlinked directories.
+
 
 ## What Gets Blocked
 
@@ -161,6 +190,7 @@ echo "data" > ~/file.txt          # ❌ Redirect to home
 rm .env                           # ❌ Protected file
 echo "SECRET=x" > .env.local      # ❌ Protected file
 rm -rf .git                       # ❌ Protected directory
+.leashrc                          # ❌ Protected config
 
 # Dangerous git commands (blocked everywhere)
 git reset --hard                  # ❌ Destroys uncommitted changes

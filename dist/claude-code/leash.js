@@ -5,9 +5,9 @@ import { basename, resolve as resolve2 } from "path";
 import { homedir as homedir2 } from "os";
 
 // packages/core/path-validator.ts
-import { resolve, relative } from "path";
+import { resolve, relative, join } from "path";
 import { homedir } from "os";
-import { realpathSync } from "fs";
+import { realpathSync, readdirSync, lstatSync } from "fs";
 
 // packages/core/constants.ts
 var DANGEROUS_COMMANDS = /* @__PURE__ */ new Set([
@@ -47,7 +47,8 @@ var TEMP_PATHS = [
 var SAFE_WRITE_PATHS = [...DEVICE_PATHS, ...TEMP_PATHS];
 var PROTECTED_PATTERNS = [
   { pattern: /^\.env($|\.(?!example$).+)/, name: ".env files" },
-  { pattern: /^\.git(\/|$)/, name: ".git directory" }
+  { pattern: /^\.git(\/|$)/, name: ".git directory" },
+  { pattern: /^\.leashrc$/, name: ".leashrc config" }
 ];
 var ALWAYS_BLOCKED_PATTERNS = [
   // Git — can destroy uncommitted work or remote history
@@ -104,13 +105,23 @@ var ALWAYS_BLOCKED_PATTERNS = [
     name: "docker volume rm/prune"
   },
   { pattern: /\bcrontab\s+-r\b/, name: "crontab -r" },
-  { pattern: /\bchmod\b.*\b777\b/, name: "chmod 777" }
+  { pattern: /\bchmod\b.*\b777\b/, name: "chmod 777" },
+  // Leash CLI — agent must not modify its own guardrails
+  {
+    pattern: /\bleash\s+(setup|remove|revoke|list|update|path)\b/,
+    name: "leash CLI"
+  },
+  {
+    pattern: /\bleash\s+allow\s+.*[\/.]/,
+    name: "leash allow with path"
+  }
 ];
 
 // packages/core/path-validator.ts
 var PathValidator = class {
-  constructor(workingDirectory) {
+  constructor(workingDirectory, allowedDirectories = []) {
     this.workingDirectory = workingDirectory;
+    this.allowedDirectories = allowedDirectories;
   }
   expand(path) {
     return path.replace(/^~(?=\/|$)/, homedir()).replace(/\$\{?(\w+)\}?/g, (_, name) => {
@@ -128,18 +139,25 @@ var PathValidator = class {
       return resolved;
     }
   }
-  isWithinWorkingDir(path) {
+  isWithinDir(realPath, dir) {
     try {
-      const realPath = this.resolveReal(path);
-      const realWorkDir = realpathSync(this.workingDirectory);
-      if (realPath === realWorkDir) {
+      const realDir = realpathSync(dir);
+      if (realPath === realDir) {
         return true;
       }
-      const rel = relative(realWorkDir, realPath);
+      const rel = relative(realDir, realPath);
       return !!rel && !rel.startsWith("..") && !rel.startsWith("/");
     } catch {
       return false;
     }
+  }
+  isWithinAllowedDir(path) {
+    const realPath = this.resolveReal(path);
+    if (this.isWithinDir(realPath, this.workingDirectory)) return true;
+    for (const dir of this.allowedDirectories) {
+      if (this.isWithinDir(realPath, dir)) return true;
+    }
+    return false;
   }
   matchesAny(resolved, paths) {
     return paths.some((p) => resolved === p || resolved.startsWith(p + "/"));
@@ -159,29 +177,60 @@ var PathValidator = class {
     return this.matchesAny(resolved, platformPaths);
   }
   isProtectedPath(path) {
-    if (!this.isWithinWorkingDir(path)) {
+    if (!this.isWithinAllowedDir(path)) {
       return { protected: false };
     }
     const realPath = this.resolveReal(path);
-    const realWorkDir = realpathSync(this.workingDirectory);
-    const relativePath = relative(realWorkDir, realPath);
-    for (const { pattern, name } of PROTECTED_PATTERNS) {
-      if (pattern.test(relativePath)) {
-        return { protected: true, name };
+    const dirsToCheck = [this.workingDirectory, ...this.allowedDirectories];
+    for (const dir of dirsToCheck) {
+      try {
+        const realDir = realpathSync(dir);
+        const relativePath = relative(realDir, realPath);
+        if (!relativePath || relativePath.startsWith("..") || relativePath.startsWith("/")) {
+          continue;
+        }
+        for (const { pattern, name } of PROTECTED_PATTERNS) {
+          if (pattern.test(relativePath)) {
+            return { protected: true, name };
+          }
+        }
+      } catch {
+        continue;
       }
     }
     return { protected: false };
+  }
+  suggestAllowableSymlink(blockedPath) {
+    try {
+      const realPath = this.resolveReal(blockedPath);
+      const entries = readdirSync(this.workingDirectory);
+      for (const entry of entries) {
+        const entryPath = join(this.workingDirectory, entry);
+        try {
+          if (!lstatSync(entryPath).isSymbolicLink()) continue;
+          const target = realpathSync(entryPath);
+          if (this.isWithinDir(realPath, target)) return entry;
+        } catch {
+          continue;
+        }
+      }
+    } catch {
+    }
+    return null;
   }
 };
 
 // packages/core/command-analyzer.ts
 var DELETE_COMMANDS = /* @__PURE__ */ new Set(["rm", "rmdir", "unlink", "shred"]);
 var CommandAnalyzer = class {
-  constructor(workingDirectory) {
+  constructor(workingDirectory, allowedDirectories = []) {
     this.workingDirectory = workingDirectory;
-    this.pathValidator = new PathValidator(workingDirectory);
+    this.pathValidator = new PathValidator(workingDirectory, allowedDirectories);
   }
   pathValidator;
+  suggestAllow(blockedPath) {
+    return this.pathValidator.suggestAllowableSymlink(blockedPath);
+  }
   resolvePath(path, resolveBase) {
     const expanded = this.pathValidator.expand(path);
     return resolveBase ? resolve2(resolveBase, expanded) : expanded;
@@ -209,7 +258,7 @@ var CommandAnalyzer = class {
   }
   isPathAllowed(path, allowDevicePaths, resolveBase) {
     const resolved = this.resolvePath(path, resolveBase);
-    if (this.pathValidator.isWithinWorkingDir(resolved)) return true;
+    if (this.pathValidator.isWithinAllowedDir(resolved)) return true;
     if (this.pathValidator.isPlatformPath(resolved)) return true;
     return allowDevicePaths ? this.pathValidator.isSafeForWrite(resolved) : this.pathValidator.isTempPath(resolved);
   }
@@ -340,7 +389,7 @@ var CommandAnalyzer = class {
       if (!path || path.startsWith("&")) {
         continue;
       }
-      if (!this.pathValidator.isSafeForWrite(path) && !this.pathValidator.isWithinWorkingDir(path) && !this.pathValidator.isPlatformPath(path)) {
+      if (!this.pathValidator.isSafeForWrite(path) && !this.pathValidator.isWithinAllowedDir(path) && !this.pathValidator.isPlatformPath(path)) {
         return {
           blocked: true,
           reason: `Redirect to path outside working directory: ${path}`
@@ -384,7 +433,7 @@ var CommandAnalyzer = class {
       const paths = this.extractPaths(command);
       for (const path of paths) {
         const resolved = this.resolvePath(path, resolveBase);
-        if (!this.pathValidator.isWithinWorkingDir(resolved) && !this.pathValidator.isTempPath(resolved) && !this.pathValidator.isPlatformPath(resolved)) {
+        if (!this.pathValidator.isWithinAllowedDir(resolved) && !this.pathValidator.isTempPath(resolved) && !this.pathValidator.isPlatformPath(resolved)) {
           return {
             blocked: true,
             reason: `Command "${name}" targets path outside working directory: ${path}`
@@ -556,7 +605,7 @@ var CommandAnalyzer = class {
   }
   validatePath(path) {
     if (!path) return { blocked: false };
-    if (!this.pathValidator.isSafeForWrite(path) && !this.pathValidator.isWithinWorkingDir(path) && !this.pathValidator.isPlatformPath(path)) {
+    if (!this.pathValidator.isSafeForWrite(path) && !this.pathValidator.isWithinAllowedDir(path) && !this.pathValidator.isPlatformPath(path)) {
       return {
         blocked: true,
         reason: `File operation targets path outside working directory: ${path}`
@@ -568,13 +617,13 @@ var CommandAnalyzer = class {
 
 // packages/core/version-checker.ts
 import { readFileSync, existsSync } from "fs";
-import { dirname, join } from "path";
+import { dirname, join as join2 } from "path";
 import { fileURLToPath } from "url";
 function getVersion() {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    join(__dirname, "..", "..", "package.json"),
-    join(__dirname, "..", "..", "..", "package.json")
+    join2(__dirname, "..", "..", "package.json"),
+    join2(__dirname, "..", "..", "..", "package.json")
   ];
   for (const path of candidates) {
     if (existsSync(path)) {
@@ -622,7 +671,38 @@ async function checkForUpdates() {
   }
 }
 
-// packages/claude-code/leash.ts
+// packages/core/leashrc.ts
+import { join as join3 } from "path";
+import { readFileSync as readFileSync2, lstatSync as lstatSync2 } from "fs";
+function parseLeashrc(content) {
+  const allow = [];
+  let currentSection = "";
+  for (const raw of content.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const sectionMatch = line.match(/^\[(\w+)\]$/);
+    if (sectionMatch) {
+      currentSection = sectionMatch[1];
+      continue;
+    }
+    if (currentSection === "allow") {
+      allow.push(line);
+    }
+  }
+  return { allow };
+}
+function readLeashrc(cwd) {
+  const filePath = join3(cwd, ".leashrc");
+  try {
+    if (lstatSync2(filePath).isSymbolicLink()) return { allow: [] };
+    const content = readFileSync2(filePath, "utf-8");
+    return parseLeashrc(content);
+  } catch {
+    return { allow: [] };
+  }
+}
+
+// packages/core/formatting.ts
 async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) {
@@ -630,6 +710,24 @@ async function readStdin() {
   }
   return Buffer.concat(chunks).toString("utf-8");
 }
+function formatBlockMessage(label, detail, reason, cwd, analyzer, path) {
+  let msg = `\u{1F6AB} ${label}: ${detail}
+Reason: ${reason}
+Working directory: ${cwd}
+`;
+  if (path) {
+    const suggestion = analyzer.suggestAllow(path);
+    if (suggestion) {
+      msg += `Hint: This path is reachable via symlink "${suggestion}" in your working directory.
+      Run: leash allow ${suggestion}
+`;
+    }
+  }
+  msg += `Action: Guide the user to perform this operation manually.`;
+  return msg;
+}
+
+// packages/claude-code/leash.ts
 async function main() {
   let input;
   try {
@@ -645,22 +743,20 @@ async function main() {
     const update = await checkForUpdates();
     if (update.hasUpdate) {
       messages.push(
-        `\u{1F504} Leash ${update.latestVersion} available. Run: leash --update`
+        `\u{1F504} Leash ${update.latestVersion} available. Run: leash update`
       );
     }
     console.log(JSON.stringify({ systemMessage: messages.join("\n") }));
     process.exit(0);
   }
-  const analyzer = new CommandAnalyzer(cwd);
+  const { allow } = readLeashrc(cwd);
+  const analyzer = new CommandAnalyzer(cwd, allow);
   if (tool_name === "Bash") {
     const command = tool_input?.command || "";
     const result = analyzer.analyze(command);
     if (result.blocked) {
       console.error(
-        `\u{1F6AB} Command blocked: ${command}
-Reason: ${result.reason}
-Working directory: ${cwd}
-Action: Guide the user to run the command manually.`
+        formatBlockMessage("Command blocked", command, result.reason, cwd, analyzer)
       );
       process.exit(2);
     }
@@ -670,10 +766,7 @@ Action: Guide the user to run the command manually.`
     const result = analyzer.validatePath(path);
     if (result.blocked) {
       console.error(
-        `\u{1F6AB} File operation blocked: ${path}
-Reason: ${result.reason}
-Working directory: ${cwd}
-Action: Guide the user to perform this operation manually.`
+        formatBlockMessage("File operation blocked", path, result.reason, cwd, analyzer, path)
       );
       process.exit(2);
     }

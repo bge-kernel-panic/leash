@@ -1,6 +1,6 @@
-import { resolve, relative } from "path";
+import { resolve, relative, join } from "path";
 import { homedir } from "os";
-import { realpathSync } from "fs";
+import { realpathSync, readdirSync, lstatSync } from "fs";
 import {
   SAFE_WRITE_PATHS,
   TEMP_PATHS,
@@ -9,7 +9,10 @@ import {
 } from "./constants.js";
 
 export class PathValidator {
-  constructor(private workingDirectory: string) {}
+  constructor(
+    private workingDirectory: string,
+    private allowedDirectories: string[] = []
+  ) {}
 
   expand(path: string): string {
     return path
@@ -33,20 +36,31 @@ export class PathValidator {
     }
   }
 
-  isWithinWorkingDir(path: string): boolean {
+  private isWithinDir(realPath: string, dir: string): boolean {
     try {
-      const realPath = this.resolveReal(path);
-      const realWorkDir = realpathSync(this.workingDirectory);
+      const realDir = realpathSync(dir);
 
-      if (realPath === realWorkDir) {
+      if (realPath === realDir) {
         return true;
       }
 
-      const rel = relative(realWorkDir, realPath);
+      const rel = relative(realDir, realPath);
       return !!rel && !rel.startsWith("..") && !rel.startsWith("/");
     } catch {
       return false;
     }
+  }
+
+  isWithinAllowedDir(path: string): boolean {
+    const realPath = this.resolveReal(path);
+
+    if (this.isWithinDir(realPath, this.workingDirectory)) return true;
+
+    for (const dir of this.allowedDirectories) {
+      if (this.isWithinDir(realPath, dir)) return true;
+    }
+
+    return false;
   }
 
   private matchesAny(resolved: string, paths: string[]): boolean {
@@ -71,20 +85,58 @@ export class PathValidator {
   }
 
   isProtectedPath(path: string): { protected: boolean; name?: string } {
-    if (!this.isWithinWorkingDir(path)) {
+    if (!this.isWithinAllowedDir(path)) {
       return { protected: false };
     }
 
     const realPath = this.resolveReal(path);
-    const realWorkDir = realpathSync(this.workingDirectory);
-    const relativePath = relative(realWorkDir, realPath);
+    const dirsToCheck = [this.workingDirectory, ...this.allowedDirectories];
 
-    for (const { pattern, name } of PROTECTED_PATTERNS) {
-      if (pattern.test(relativePath)) {
-        return { protected: true, name };
+    for (const dir of dirsToCheck) {
+      try {
+        const realDir = realpathSync(dir);
+        const relativePath = relative(realDir, realPath);
+
+        if (
+          !relativePath ||
+          relativePath.startsWith("..") ||
+          relativePath.startsWith("/")
+        ) {
+          continue;
+        }
+
+        for (const { pattern, name } of PROTECTED_PATTERNS) {
+          if (pattern.test(relativePath)) {
+            return { protected: true, name };
+          }
+        }
+      } catch {
+        continue;
       }
     }
 
     return { protected: false };
+  }
+
+  suggestAllowableSymlink(blockedPath: string): string | null {
+    try {
+      const realPath = this.resolveReal(blockedPath);
+      const entries = readdirSync(this.workingDirectory);
+
+      for (const entry of entries) {
+        const entryPath = join(this.workingDirectory, entry);
+        try {
+          if (!lstatSync(entryPath).isSymbolicLink()) continue;
+          const target = realpathSync(entryPath);
+          if (this.isWithinDir(realPath, target)) return entry;
+        } catch {
+          continue;
+        }
+      }
+    } catch {
+      // workingDirectory unreadable
+    }
+
+    return null;
   }
 }

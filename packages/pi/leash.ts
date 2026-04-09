@@ -1,27 +1,22 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { CommandAnalyzer, checkForUpdates } from "../core/index.js";
+import { CommandAnalyzer, checkForUpdates, readLeashrc } from "../core/index.js";
 
 export default function (pi: ExtensionAPI) {
-  let analyzer: CommandAnalyzer | null = null;
-
   pi.on("session_start", async (_event, ctx) => {
-    analyzer = new CommandAnalyzer(ctx.cwd);
     ctx.ui.notify("🔒 Leash active", "info");
 
     const update = await checkForUpdates();
     if (update.hasUpdate) {
       ctx.ui.notify(
-        `🔄 Leash ${update.latestVersion} available. Run: leash --update (restart required)`,
+        `🔄 Leash ${update.latestVersion} available. Run: leash update (restart required)`,
         "warning"
       );
     }
   });
 
   pi.on("tool_call", async (event, ctx) => {
-    // Fallback if session event was missed
-    if (!analyzer) {
-      analyzer = new CommandAnalyzer(ctx.cwd);
-    }
+    const { allow } = readLeashrc(ctx.cwd);
+    const analyzer = new CommandAnalyzer(ctx.cwd, allow);
 
     // Shell command execution
     if (event.toolName === "bash") {
@@ -49,17 +44,24 @@ export default function (pi: ExtensionAPI) {
       const result = analyzer.validatePath(path);
 
       if (result.blocked) {
+        const suggestion = analyzer.suggestAllow(path);
+        let reason =
+          `File operation blocked: ${path}\n` +
+          `Reason: ${result.reason}\n` +
+          `Working directory: ${ctx.cwd}\n`;
+
+        if (suggestion) {
+          reason +=
+            `Hint: This path is reachable via symlink "${suggestion}" in your working directory.\n` +
+            `      Run: leash allow ${suggestion}\n`;
+        }
+
+        reason += `Action: Guide the user to perform this operation manually.`;
+
         if (ctx.hasUI) {
           ctx.ui.notify(`🚫 File operation blocked: ${result.reason}`, "warning");
         }
-        return {
-          block: true,
-          reason:
-            `File operation blocked: ${path}\n` +
-            `Reason: ${result.reason}\n` +
-            `Working directory: ${ctx.cwd}\n` +
-            `Action: Guide the user to perform this operation manually.`,
-        };
+        return { block: true, reason };
       }
     }
 

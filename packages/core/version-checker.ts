@@ -19,7 +19,9 @@ function getVersion(): string {
         if (pkg.name === "@bge-kernel-panic/leash") {
           return pkg.version;
         }
-      } catch {}
+      } catch {
+        // candidate not valid, try next
+      }
     }
   }
 

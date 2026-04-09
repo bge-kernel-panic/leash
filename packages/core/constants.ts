@@ -45,6 +45,7 @@ export const SAFE_WRITE_PATHS = [...DEVICE_PATHS, ...TEMP_PATHS];
 export const PROTECTED_PATTERNS: Array<{ pattern: RegExp; name: string }> = [
   { pattern: /^\.env($|\.(?!example$).+)/, name: ".env files" },
   { pattern: /^\.git(\/|$)/, name: ".git directory" },
+  { pattern: /^\.leashrc$/, name: ".leashrc config" },
 ];
 
 /** Blocked even within working directory - unconditionally dangerous commands */
@@ -107,4 +108,14 @@ export const ALWAYS_BLOCKED_PATTERNS: Array<{ pattern: RegExp; name: string }> =
     },
     { pattern: /\bcrontab\s+-r\b/, name: "crontab -r" },
     { pattern: /\bchmod\b.*\b777\b/, name: "chmod 777" },
+
+    // Leash CLI — agent must not modify its own guardrails
+    {
+      pattern: /\bleash\s+(setup|remove|revoke|list|update|path)\b/,
+      name: "leash CLI",
+    },
+    {
+      pattern: /\bleash\s+allow\s+.*[\/.]/,
+      name: "leash allow with path",
+    },
   ];

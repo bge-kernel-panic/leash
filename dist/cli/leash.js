@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 
 // packages/cli/leash.ts
-import { existsSync as existsSync3 } from "fs";
-import { dirname as dirname3, join as join2 } from "path";
+import {
+  existsSync as existsSync3,
+  readFileSync as readFileSync3,
+  writeFileSync as writeFileSync2,
+  statSync,
+  lstatSync,
+  realpathSync
+} from "fs";
+import { dirname as dirname3, join as join2, resolve, relative } from "path";
 import { homedir } from "os";
 import { fileURLToPath as fileURLToPath2 } from "url";
 import { execSync } from "child_process";
+import { createInterface } from "readline";
 
 // packages/cli/lib.ts
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
@@ -846,10 +854,10 @@ function visit(text, visitor, options = ParseOptions.DEFAULT) {
     return visitFunction ? () => suppressedCallbacks === 0 && visitFunction(_scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter()) : () => true;
   }
   function toOneArgVisit(visitFunction) {
-    return visitFunction ? (arg) => suppressedCallbacks === 0 && visitFunction(arg, _scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter()) : () => true;
+    return visitFunction ? (arg2) => suppressedCallbacks === 0 && visitFunction(arg2, _scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter()) : () => true;
   }
   function toOneArgVisitWithPath(visitFunction) {
-    return visitFunction ? (arg) => suppressedCallbacks === 0 && visitFunction(arg, _scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter(), () => _jsonPath.slice()) : () => true;
+    return visitFunction ? (arg2) => suppressedCallbacks === 0 && visitFunction(arg2, _scanner.getTokenOffset(), _scanner.getTokenLength(), _scanner.getTokenStartLine(), _scanner.getTokenStartCharacter(), () => _jsonPath.slice()) : () => true;
   }
   function toBeginVisit(visitFunction) {
     return visitFunction ? () => {
@@ -1550,45 +1558,45 @@ function removeOpenCode(configPath) {
   return { success: true, platform: "OpenCode" };
 }
 function setupPlatform(platformKey, configPath, leashPath) {
-  const platform2 = PLATFORMS[platformKey];
-  if (!platform2) {
+  const platform = PLATFORMS[platformKey];
+  if (!platform) {
     return { error: `Unknown platform: ${platformKey}` };
   }
   if (platformKey === "opencode") {
     return setupOpenCode(configPath, leashPath);
   }
   const config = readConfig(configPath);
-  if (!platform2.setup) {
+  if (!platform.setup) {
     return { error: `Platform ${platformKey} has no setup handler` };
   }
-  const result = platform2.setup(config, leashPath);
+  const result = platform.setup(config, leashPath);
   if (result.skipped) {
-    return { skipped: true, platform: platform2.name };
+    return { skipped: true, platform: platform.name };
   }
   writeConfig(configPath, config);
-  return { success: true, platform: platform2.name, configPath };
+  return { success: true, platform: platform.name, configPath };
 }
 function removePlatform(platformKey, configPath) {
-  const platform2 = PLATFORMS[platformKey];
-  if (!platform2) {
+  const platform = PLATFORMS[platformKey];
+  if (!platform) {
     return { error: `Unknown platform: ${platformKey}` };
   }
   if (platformKey === "opencode") {
     return removeOpenCode(configPath);
   }
   if (!existsSync(configPath)) {
-    return { notFound: true, platform: platform2.name };
+    return { notFound: true, platform: platform.name };
   }
   const config = readConfig(configPath);
-  if (!platform2.remove) {
+  if (!platform.remove) {
     return { error: `Platform ${platformKey} has no remove handler` };
   }
-  const removed = platform2.remove(config);
+  const removed = platform.remove(config);
   if (!removed) {
-    return { notInstalled: true, platform: platform2.name };
+    return { notInstalled: true, platform: platform.name };
   }
   writeConfig(configPath, config);
-  return { success: true, platform: platform2.name };
+  return { success: true, platform: platform.name };
 }
 
 // packages/core/version-checker.ts
@@ -1647,26 +1655,46 @@ async function checkForUpdates() {
   }
 }
 
+// packages/core/leashrc.ts
+function parseLeashrc(content) {
+  const allow2 = [];
+  let currentSection = "";
+  for (const raw of content.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const sectionMatch = line.match(/^\[(\w+)\]$/);
+    if (sectionMatch) {
+      currentSection = sectionMatch[1];
+      continue;
+    }
+    if (currentSection === "allow") {
+      allow2.push(line);
+    }
+  }
+  return { allow: allow2 };
+}
+
 // packages/cli/leash.ts
 var __dirname = dirname3(fileURLToPath2(import.meta.url));
+var LEASHRC = ".leashrc";
 function getDistPath() {
   return join2(__dirname, "..");
 }
 function getConfigPath(platformKey) {
-  const platform2 = PLATFORMS[platformKey];
-  if (!platform2) return null;
-  if (platform2.configPaths) {
-    for (const p of platform2.configPaths) {
+  const platform = PLATFORMS[platformKey];
+  if (!platform) return null;
+  if (platform.configPaths) {
+    for (const p of platform.configPaths) {
       const full = join2(homedir(), p);
       if (existsSync3(full)) return full;
     }
-    return join2(homedir(), platform2.configPaths.at(-1));
+    return join2(homedir(), platform.configPaths.at(-1));
   }
-  return join2(homedir(), platform2.configPath);
+  return join2(homedir(), platform.configPath);
 }
 function getLeashPath(platformKey) {
-  const platform2 = PLATFORMS[platformKey];
-  return platform2 ? join2(getDistPath(), platform2.distPath) : null;
+  const platform = PLATFORMS[platformKey];
+  return platform ? join2(getDistPath(), platform.distPath) : null;
 }
 function setup(platformKey) {
   const configPath = getConfigPath(platformKey);
@@ -1732,14 +1760,158 @@ async function update() {
     console.log(`[ok] Already up to date (v${result.currentVersion})`);
     return;
   }
-  console.log(`[ok] Update available: v${result.currentVersion} \u2192 v${result.latestVersion}`);
+  console.log(
+    `[ok] Update available: v${result.currentVersion} \u2192 v${result.latestVersion}`
+  );
   console.log("[ok] Updating...");
   try {
     execSync("npm update -g @melihmucuk/leash", { stdio: "inherit" });
     console.log("[ok] Update complete");
   } catch {
-    console.error("[error] Update failed. Try manually: npm update -g @melihmucuk/leash");
+    console.error(
+      "[error] Update failed. Try manually: npm update -g @melihmucuk/leash"
+    );
     process.exit(1);
+  }
+}
+function leashrcPath() {
+  return join2(process.cwd(), LEASHRC);
+}
+function ensureLeashrcNotSymlink() {
+  const p = leashrcPath();
+  try {
+    if (lstatSync(p).isSymbolicLink()) {
+      console.error("[error] .leashrc is a symlink \u2014 refusing to operate");
+      process.exit(1);
+    }
+  } catch {
+  }
+}
+function readAllowList() {
+  const p = leashrcPath();
+  try {
+    const content = readFileSync3(p, "utf-8");
+    return parseLeashrc(content).allow;
+  } catch {
+    return [];
+  }
+}
+function writeAllowList(paths) {
+  ensureLeashrcNotSymlink();
+  const content = paths.length > 0 ? `[allow]
+${paths.join("\n")}
+` : `[allow]
+`;
+  writeFileSync2(leashrcPath(), content, "utf-8");
+}
+function allow(pathArg) {
+  const resolved = resolve(process.cwd(), pathArg);
+  try {
+    if (realpathSync(resolved) === realpathSync(process.cwd())) {
+      return;
+    }
+  } catch {
+  }
+  if (!existsSync3(resolved)) {
+    console.error(`[error] Path does not exist: ${resolved}`);
+    process.exit(1);
+  }
+  let realPath;
+  try {
+    realPath = realpathSync(resolved);
+  } catch {
+    console.error(`[error] Cannot resolve path: ${resolved}`);
+    process.exit(1);
+    return;
+  }
+  if (!statSync(realPath).isDirectory()) {
+    console.error(`[error] Not a directory: ${realPath}`);
+    process.exit(1);
+  }
+  const realHome = realpathSync(homedir());
+  const rel = relative(realHome, realPath);
+  if (!rel || rel.startsWith("..") || rel.startsWith("/")) {
+    console.error(
+      `[error] Path must be within your home directory: ${realPath}`
+    );
+    process.exit(1);
+  }
+  ensureLeashrcNotSymlink();
+  const current = readAllowList();
+  if (current.includes(realPath)) {
+    return;
+  }
+  current.push(realPath);
+  writeAllowList(current);
+  console.log(`[ok] Allowed: ${realPath}`);
+}
+async function revoke(pathArg) {
+  if (pathArg === "--all") {
+    ensureLeashrcNotSymlink();
+    writeAllowList([]);
+    console.log("[ok] Allowlist cleared");
+    return;
+  }
+  const current = readAllowList();
+  if (pathArg) {
+    let resolved;
+    try {
+      const abs = resolve(process.cwd(), pathArg);
+      resolved = existsSync3(abs) ? realpathSync(abs) : abs;
+    } catch {
+      resolved = resolve(process.cwd(), pathArg);
+    }
+    const idx = current.indexOf(resolved);
+    if (idx === -1) {
+      console.log(
+        `Path not in allowlist. Run 'leash revoke' to interactively select one.`
+      );
+      return;
+    }
+    current.splice(idx, 1);
+    writeAllowList(current);
+    console.log(`[ok] Revoked: ${resolved}`);
+    return;
+  }
+  if (current.length === 0) {
+    console.log("Allowlist is empty");
+    return;
+  }
+  console.log("Allowed directories:");
+  for (let i = 0; i < current.length; i++) {
+    console.log(`  ${i + 1}. ${current[i]}`);
+  }
+  console.log();
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  const answer = await new Promise((res) => {
+    rl.question("Pick a number to revoke (or q to cancel): ", (ans) => {
+      rl.close();
+      res(ans.trim());
+    });
+  });
+  if (answer === "q" || answer === "") {
+    return;
+  }
+  const num = parseInt(answer, 10);
+  if (isNaN(num) || num < 1 || num > current.length) {
+    console.error("[error] Invalid selection");
+    process.exit(1);
+  }
+  const removed = current.splice(num - 1, 1)[0];
+  writeAllowList(current);
+  console.log(`[ok] Revoked: ${removed}`);
+}
+function list() {
+  const current = readAllowList();
+  if (current.length === 0) {
+    console.log("No directories in allowlist");
+    return;
+  }
+  for (const p of current) {
+    console.log(p);
   }
 }
 function showHelp() {
@@ -1747,11 +1919,15 @@ function showHelp() {
 leash - Security guardrails for AI coding agents
 
 Usage:
-  leash --setup <platform>    Install leash for a platform
-  leash --remove <platform>   Remove leash from a platform
-  leash --path <platform>     Show leash path for a platform
-  leash --update              Update leash to latest version
-  leash --help                Show this help
+  leash setup <platform>    Install leash for a platform
+  leash remove <platform>   Remove leash from a platform
+  leash path <platform>     Show leash path for a platform
+  leash update              Update leash to latest version
+  leash allow <path>        Allow agent access to a directory
+  leash revoke [path]       Revoke access (interactive if no path)
+  leash revoke --all        Revoke all allowed directories
+  leash list                List allowed directories
+  leash help                Show this help
 
 Platforms:
   opencode      OpenCode
@@ -1760,47 +1936,58 @@ Platforms:
   factory       Factory Droid
 
 Examples:
-  leash --setup opencode
-  leash --remove claude-code
-  leash --path pi
-  leash --update
+  leash setup claude-code
+  leash allow ~/src/other-project
+  leash revoke
+  leash list
 `);
 }
 var args = process.argv.slice(2);
 var command = args[0];
-var platform = args[1];
+var arg = args[1];
 switch (command) {
-  case "--setup":
-  case "-s":
-    if (!platform) {
+  case "setup":
+    if (!arg) {
       console.error("Missing platform argument");
       showHelp();
       process.exit(1);
     }
-    setup(platform);
+    setup(arg);
     break;
-  case "--remove":
-  case "-r":
-    if (!platform) {
+  case "remove":
+    if (!arg) {
       console.error("Missing platform argument");
       showHelp();
       process.exit(1);
     }
-    remove(platform);
+    remove(arg);
     break;
-  case "--path":
-  case "-p":
-    if (!platform) {
+  case "path":
+    if (!arg) {
       console.error("Missing platform argument");
       showHelp();
       process.exit(1);
     }
-    showPath(platform);
+    showPath(arg);
     break;
-  case "--update":
-  case "-u":
+  case "update":
     await update();
     break;
+  case "allow":
+    if (!arg) {
+      console.error("Missing path argument");
+      showHelp();
+      process.exit(1);
+    }
+    allow(arg);
+    break;
+  case "revoke":
+    await revoke(arg);
+    break;
+  case "list":
+    list();
+    break;
+  case "help":
   case "--help":
   case "-h":
   case void 0:

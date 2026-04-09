@@ -18,8 +18,15 @@ const DELETE_COMMANDS = new Set(["rm", "rmdir", "unlink", "shred"]);
 export class CommandAnalyzer {
   private pathValidator: PathValidator;
 
-  constructor(private workingDirectory: string) {
-    this.pathValidator = new PathValidator(workingDirectory);
+  constructor(
+    private workingDirectory: string,
+    allowedDirectories: string[] = []
+  ) {
+    this.pathValidator = new PathValidator(workingDirectory, allowedDirectories);
+  }
+
+  suggestAllow(blockedPath: string): string | null {
+    return this.pathValidator.suggestAllowableSymlink(blockedPath);
   }
 
   private resolvePath(path: string, resolveBase?: string): string {
@@ -62,7 +69,7 @@ export class CommandAnalyzer {
     resolveBase?: string
   ): boolean {
     const resolved = this.resolvePath(path, resolveBase);
-    if (this.pathValidator.isWithinWorkingDir(resolved)) return true;
+    if (this.pathValidator.isWithinAllowedDir(resolved)) return true;
     if (this.pathValidator.isPlatformPath(resolved)) return true;
     return allowDevicePaths
       ? this.pathValidator.isSafeForWrite(resolved)
@@ -232,7 +239,7 @@ export class CommandAnalyzer {
       }
       if (
         !this.pathValidator.isSafeForWrite(path) &&
-        !this.pathValidator.isWithinWorkingDir(path) &&
+        !this.pathValidator.isWithinAllowedDir(path) &&
         !this.pathValidator.isPlatformPath(path)
       ) {
         return {
@@ -292,7 +299,7 @@ export class CommandAnalyzer {
       for (const path of paths) {
         const resolved = this.resolvePath(path, resolveBase);
         if (
-          !this.pathValidator.isWithinWorkingDir(resolved) &&
+          !this.pathValidator.isWithinAllowedDir(resolved) &&
           !this.pathValidator.isTempPath(resolved) &&
           !this.pathValidator.isPlatformPath(resolved)
         ) {
@@ -520,7 +527,7 @@ export class CommandAnalyzer {
 
     if (
       !this.pathValidator.isSafeForWrite(path) &&
-      !this.pathValidator.isWithinWorkingDir(path) &&
+      !this.pathValidator.isWithinAllowedDir(path) &&
       !this.pathValidator.isPlatformPath(path)
     ) {
       return {

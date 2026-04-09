@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { CommandAnalyzer, checkForUpdates } from "../core/index.js";
+import { CommandAnalyzer, checkForUpdates, readLeashrc, readStdin, formatBlockMessage } from "../core/index.js";
 
 interface FactoryHookInput {
   hook_event_name: string;
@@ -9,14 +9,6 @@ interface FactoryHookInput {
     file_path?: string;
   };
   cwd?: string;
-}
-
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString("utf-8");
 }
 
 async function main() {
@@ -42,7 +34,7 @@ async function main() {
     const update = await checkForUpdates();
     if (update.hasUpdate) {
       messages.push(
-        `🔄 Leash ${update.latestVersion} available. Run: leash --update`
+        `🔄 Leash ${update.latestVersion} available. Run: leash update`
       );
     }
 
@@ -51,7 +43,8 @@ async function main() {
   }
 
   // PreToolUse: security checks
-  const analyzer = new CommandAnalyzer(cwd);
+  const { allow } = readLeashrc(cwd);
+  const analyzer = new CommandAnalyzer(cwd, allow);
 
   // Shell command execution
   if (tool_name === "Execute") {
@@ -60,10 +53,7 @@ async function main() {
 
     if (result.blocked) {
       console.error(
-        `🚫 Command blocked: ${command}\n` +
-          `Reason: ${result.reason}\n` +
-          `Working directory: ${cwd}\n` +
-          `Action: Guide the user to run the command manually.`
+        formatBlockMessage("Command blocked", command, result.reason!, cwd, analyzer)
       );
       process.exit(2);
     }
@@ -76,10 +66,7 @@ async function main() {
 
     if (result.blocked) {
       console.error(
-        `🚫 File operation blocked: ${path}\n` +
-          `Reason: ${result.reason}\n` +
-          `Working directory: ${cwd}\n` +
-          `Action: Guide the user to perform this operation manually.`
+        formatBlockMessage("File operation blocked", path, result.reason!, cwd, analyzer, path)
       );
       process.exit(2);
     }
