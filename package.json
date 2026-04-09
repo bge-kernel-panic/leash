@@ -44,7 +44,7 @@
   "scripts": {
     "test": "npm run build:core && npm run build:cli-lib && node --test packages/core/test/*.test.js packages/cli/test/*.test.js",
     "typecheck": "tsc --noEmit",
-    "build": "npm run build:core && npm run build:cli && npm run build:opencode && npm run build:pi && npm run build:claude-code && npm run build:factory",
+    "compile": "npm run build:core && npm run build:cli && npm run build:opencode && npm run build:pi && npm run build:claude-code && npm run build:factory",
     "build:core": "esbuild packages/core/*.ts --outdir=packages/core/lib --platform=node --format=esm",
     "build:cli-lib": "esbuild packages/cli/lib.ts --outdir=packages/cli/lib --platform=node --format=esm --main-fields=module,main",
     "build:cli": "esbuild packages/cli/leash.ts --bundle --outfile=dist/cli/leash.js --platform=node --format=esm --main-fields=module,main --banner:js='#!/usr/bin/env node'",

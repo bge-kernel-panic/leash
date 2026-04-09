@@ -459,7 +459,7 @@ For maximum security, combine Leash with container isolation (Docker), user perm
 ```bash
 cd ~/leash
 npm install
-npm run build
+npm run compile
 ```
 
 ## Contributing
